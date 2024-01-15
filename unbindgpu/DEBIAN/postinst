@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Enable the service
+systemctl enable unbindgpu.service || exit

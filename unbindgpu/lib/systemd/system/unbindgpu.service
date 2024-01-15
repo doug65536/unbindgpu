@@ -1,0 +1,11 @@
+[Unit]
+Description=Unbind Pesky GPU USB
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/unbind_gpu
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

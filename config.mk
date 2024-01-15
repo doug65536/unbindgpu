@@ -1,0 +1,5 @@
+PACKAGE_NAME := unbindgpu
+VERSION := 1.1
+ARCHITECTURE := all
+DEPENDS := bash
+DESCRIPTION := Unbind pesky GPU USB

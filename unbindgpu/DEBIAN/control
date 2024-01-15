@@ -1,0 +1,8 @@
+Package: unbindgpu
+Version: 1.1
+Section: utils
+Priority: optional
+Architecture: all
+Depends: bash
+Maintainer: Doug Gale <doug16kpkg@gmail.com>
+Description: Unbind pesky GPU USB

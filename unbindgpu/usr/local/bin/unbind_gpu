@@ -1,0 +1,96 @@
+#!/bin/bash
+
+dryrun=
+[[ $1 == "--dry-run" ]] && dryrun=1
+
+declare -A device_group=()
+declare -A device_driver=()
+declare -A group_devices=()
+
+# Collect information about each device from lspci
+current_dev=
+while read -r line; do
+    if [[ $line =~ ^([0-9a-fA-F]{4}):([0-9a-fA-F]{2}):([0-9a-fA-F]{2})\.([0-9a-fA-F]{1}) ]]; then
+        current_dev=${BASH_REMATCH[0]}
+    elif [[ $line =~ IOMMU\ group:\ ([0-9]+) ]]; then
+        dev_group=${BASH_REMATCH[1]}
+        device_group[$current_dev]=$dev_group
+        group_devices[$dev_group]+="$current_dev,"
+        echo "$current_dev in group $dev_group" >&2
+    elif [[ $line =~ Kernel\ driver\ in\ use:\ (.*) ]]; then
+        driver=${BASH_REMATCH[1]}
+        device_driver[$current_dev]=$driver
+        echo "$current_dev using $driver" >&2
+    fi
+done < <(lspci -vvD)
+
+# Remove the trailing comma from each group_devices entry
+for dev_group in "${!group_devices[@]}"; do
+   group_devices[$dev_group]=${group_devices[$dev_group]%,}
+done
+
+# 
+declare -A has_vfio=()
+declare -A has_non_vfio=()
+
+# Loop through every device
+for dev in "${!device_group[@]}"; do
+    # Get the group number and driver
+    dev_group=${device_group[$dev]}
+    dev_driver=${device_driver[$dev]}
+
+    # Note whether each group has vfio and/or non-vfio
+    if [[ $dev_driver == "vfio-pci" ]]; then
+        has_vfio[$dev_group]=1
+    else
+        has_non_vfio[$dev_group]=1
+    fi
+done
+
+vfio_loaded=
+
+# Loop through every device that has any vfio in the group
+for dev_group in "${!has_vfio[@]}"; do
+    # If it doesn't have any non-vfio, it's fine
+    if [[ ${has_non_vfio[$dev_group]} != 1 ]]; then
+        echo "group $dev_group is fine, skipping" >&2
+        continue
+    fi
+
+    echo "Rebinding devices in group $dev_group..." >&2
+
+    # Make array of device ids in the group
+    IFS=',' read -ra device_ids <<< "${group_devices[$dev_group]}"
+
+    # Go through all of the devices in the group
+    for dev_id in "${device_ids[@]}"; do
+        dev_driver=${device_driver[$dev_id]}
+        if [[ $dev_driver != "vfio-pci" ]]; then
+            if [[ -z $vfio_loaded ]]; then
+                vfio_loaded=1
+                sudo modprobe vfio-pci || exit
+            fi
+
+            if [[ -z $dryrun ]]; then
+                echo "Rebinding $dev_id which was using $dev_driver" >&2
+
+                # Unbind it from its current driver and bind it to vfio-pci
+                echo "$dev_id" \
+                    | sudo tee -a "/sys/bus/pci/devices/$dev_id/driver/unbind" \
+                    || exit
+                echo "$dev_id" \
+                    | sudo tee -a /sys/bus/pci/drivers/vfio-pci/bind \
+                    || exit
+            else
+                echo "Would rebind $dev_driver, but dry run" >&2
+            fi
+        fi
+    done
+done
+
+# echo '0000:0a:00.2' | sudo tee -a /sys/bus/pci/devices/0000:0a:00.2/driver/unbind
+# echo '0000:0a:00.3' | sudo tee -a /sys/bus/pci/devices/0000:0a:00.3/driver/unbind
+
+# echo '0000:0a:00.2' | sudo tee -a /sys/bus/pci/drivers/vfio-pci/bind
+# echo '0000:0a:00.3' | sudo tee -a /sys/bus/pci/drivers/vfio-pci/bind
+
