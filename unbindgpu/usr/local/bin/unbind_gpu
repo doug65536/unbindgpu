@@ -16,11 +16,11 @@ while read -r line; do
         dev_group=${BASH_REMATCH[1]}
         device_group[$current_dev]=$dev_group
         group_devices[$dev_group]+="$current_dev,"
-        echo "$current_dev in group $dev_group" >&2
+        echo "$current_dev is in group $dev_group" >&2
     elif [[ $line =~ Kernel\ driver\ in\ use:\ (.*) ]]; then
         driver=${BASH_REMATCH[1]}
         device_driver[$current_dev]=$driver
-        echo "$current_dev using $driver" >&2
+        echo "$current_dev is using driver $driver" >&2
     fi
 done < <(lspci -vvD)
 
@@ -49,7 +49,7 @@ done
 
 vfio_loaded=
 
-# Loop through every device that has any vfio in the group
+# Loop through every group that has any vfio in the group
 for dev_group in "${!has_vfio[@]}"; do
     # If it doesn't have any non-vfio, it's fine
     if [[ ${has_non_vfio[$dev_group]} != 1 ]]; then
@@ -67,6 +67,7 @@ for dev_group in "${!has_vfio[@]}"; do
         dev_driver=${device_driver[$dev_id]}
         if [[ $dev_driver != "vfio-pci" ]]; then
             if [[ -z $vfio_loaded ]]; then
+                echo "Ensuring vfio-pci is loaded" >&2
                 vfio_loaded=1
                 sudo modprobe vfio-pci || exit
             fi
